@@ -22,6 +22,7 @@ the owners of the Torchlight trademark.
 | --- | --- |
 | Nintendo Switch | homebrew (hbmenu) |
 | Android | arm64, Android 12 or newer |
+| iOS | iPhone and iPad (unsigned build; sign before installing) |
 | Windows | desktop build |
 | Linux | desktop build |
 
@@ -163,6 +164,71 @@ the system's folder picker:
 The launcher remembers the folder and checks it on every start. If `pak.zip` is
 missing it asks again, and if `music/` is missing it offers to play without
 music. Android 12 (API 31) or newer is required, on an arm64 device.
+
+### iOS
+
+The iOS port is part of this repository. The app bundle contains the engine,
+OGRE's shader library, and the Torchlight app icon. It does not include game
+data in the repository, IPA, or GitHub upload. Supply your own game files when
+building or copy them into the app after installing it.
+
+**Game data has two supported locations:**
+
+1. **Bundle it into a local build.** Put the files in a folder with this exact
+   layout, then set `TL_IOS_GAME_DATA_DIR` to that folder when configuring
+   CMake. The post-build step copies the folder into the app as `GameData/`;
+   on first launch, the app copies those items into Documents.
+
+   ```text
+   game-data/
+   ├── pak.zip
+   ├── music/
+   └── console_ui/       only needed with a PC pak.zip
+   ```
+
+   Use the Xbox 360 `pak.zip` when available; it already contains the console
+   interface. For a PC `Pak.zip`, include `console_ui/` beside it. The
+   `music/` folder contains level music and is required for soundtracks.
+
+2. **Copy the files after installation.** In the iOS Files app, open **On My
+   iPhone/iPad → Torchlight Rekindled** and copy `pak.zip`, `music/`, and, when
+   using a PC archive, `console_ui/` into that folder. Keep the folder names
+   and nesting as shown above. The app reads the game data and stores saves,
+   settings, and logs in its Documents folder.
+
+If the app has already launched without bundled data, copying the files into
+its Documents folder is enough; no rebuild is needed. The app copies bundled
+files only when the corresponding Documents item does not already exist.
+Touch controls appear on screen when first touched.
+
+Build on macOS with Xcode and its iOS SDK installed:
+
+```bash
+python3 scripts/fetch_stb.py
+python3 scripts/apply_patches.py
+python3 scripts/build_ogre.py --platform ios
+cmake -S . -B build-ios -G Xcode \
+  -DTL_OGRE_BUILD_DIR="$PWD/build-ogre-ios-xcode" \
+  -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO
+cmake --build build-ios --config Release --target torchlight
+```
+
+To bundle game data in the build, add
+`-DTL_IOS_GAME_DATA_DIR="/path/to/game-data"` to the CMake configure command.
+Replace that path with the folder containing `pak.zip`, `music/`, and optional
+`console_ui/`. Omit the option if you plan to copy the game files onto the
+device through Files after installing the app.
+
+The unsigned app is `build-ios/Release-iphoneos/torchlight.app`; select a
+development team in Xcode to install it on a device.
+
+`src/platform/ios/Assets.xcassets/AppIcon.appiconset/` contains the Torchlight
+app icon and its asset-catalog manifest. Keep both files in that location for
+the Xcode build to produce the app icon.
+
+For an Apple Silicon Simulator build, use
+`python3 scripts/build_ogre.py --platform ios --ios-simulator` and set
+`TL_OGRE_BUILD_DIR` to `build-ogre-ios-simulator-xcode` when configuring CMake.
 
 ### Windows
 
