@@ -1,5 +1,6 @@
 #include "core/input.h"
 #include "core/touch_pad.h"
+#include "platform/ios/ios_app.h"
 #include <cmath>
 #include <array>
 #include <cstring>
@@ -7,16 +8,41 @@ extern "C" bool tl_ios_text_entry(const char* title, const char* guide, const ch
                                   unsigned max_chars, char* output, size_t output_size);
 namespace tl::core {
 InputState poll_platform_input() {
-    const TouchPad::State p = touch_pad().take();
+    TouchPad& pad = touch_pad();
+    const TouchPad::State p = pad.take();
+    float controller_lx = 0.0f, controller_ly = 0.0f;
+    float controller_rx = 0.0f, controller_ry = 0.0f;
+    std::uint32_t controller_buttons = 0;
+    bool controller_connected = false;
+    tl_ios_read_controller(&controller_lx, &controller_ly, &controller_rx, &controller_ry,
+                          &controller_buttons, &controller_connected);
+    // Make controller presses take over immediately; after disconnect the
+    // touch overlay returns on the user's next tap.
+    static bool was_connected = false;
+    if (controller_connected) {
+        pad.set_visible(false);
+        pad.release_all();
+    } else if (was_connected) {
+        // Return to the touch-first behavior; the next tap reveals the overlay.
+        pad.set_visible(false);
+        pad.release_all();
+    }
+    was_connected = controller_connected;
     InputState in;
-    in.stick_x = p.lx;
-    in.stick_y = -p.ly;
+    in.controller_connected = controller_connected;
+    in.touch_layout_changed = p.layout_changed;
+    in.touch_layout_offsets = p.layout_offsets;
+    in.touch_tap = p.tap;
+    in.touch_x = p.tap_x;
+    in.touch_y = p.tap_y;
+    in.stick_x = controller_connected ? controller_lx : p.lx;
+    in.stick_y = controller_connected ? controller_ly : -p.ly;
     in.zoom = 0.0f;
     in.zoom_delta = p.pinch_dolly;
-    in.camera_pitch = -p.ry;
-    in.look_x = p.rx;
-    float x = p.lx, y = -p.ly;
-    const std::uint32_t b = p.held | p.pressed;
+    in.camera_pitch = controller_connected ? -controller_ry : -p.ry;
+    in.look_x = controller_connected ? controller_rx : p.rx;
+    float x = in.stick_x, y = in.stick_y;
+    const std::uint32_t b = p.held | p.pressed | controller_buttons;
     if (b & TouchPad::kLeft) x -= 1.0f, in.dpad_x -= 1.0f;
     if (b & TouchPad::kRight) x += 1.0f, in.dpad_x += 1.0f;
     if (b & TouchPad::kDown) y -= 1.0f;
