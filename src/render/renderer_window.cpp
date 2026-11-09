@@ -13,7 +13,20 @@
 #include <thread>
 #include <utility>
 
+#if defined(TL_PLATFORM_MACOS)
+extern "C" void tl_macos_prepare_render(void* context);
+#endif
+
 namespace tl::render {
+
+void Renderer::Impl::prepare_window_surface() {
+#if defined(TL_PLATFORM_MACOS)
+    if (window == nullptr) return;
+    void* context = nullptr;
+    window->getCustomAttribute("NSOPENGLCONTEXT", &context);
+    tl_macos_prepare_render(context);
+#endif
+}
 
 void Renderer::Impl::watch_window_surface() {
     if (!config.headless) tl::core::platform_set_frame_rate(static_cast<float>(config.fps_limit));

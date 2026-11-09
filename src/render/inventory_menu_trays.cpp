@@ -212,7 +212,9 @@ InventoryMenu::PointerHit InventoryMenu::pointer_hit(const tl::core::InputState&
 bool InventoryMenu::pointer_on_menu(const tl::core::InputState& in) const {
     if (!visible_ || !in.pointer) return false;
     for (const Node& node : nodes_) {
-        if (node.panel == nullptr || (node.width > 0.95f && node.height > 0.95f)) continue;
+        // Layout placeholders can cover the play area without drawing a window.
+        if (node.panel == nullptr || node.panel->isTransparent() ||
+            (node.width > 0.95f && node.height > 0.95f)) continue;
         if (pointer_over(in, node.panel)) return true;
     }
     return false;
