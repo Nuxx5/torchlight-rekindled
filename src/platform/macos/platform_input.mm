@@ -17,6 +17,7 @@ bool app_should_keep_running = true;
 // UTF-8 (Return, Delete and Escape as the desktop's \r, \b and \x1b), and the wheel's turn.
 static std::string g_mac_typed;
 static float g_mac_wheel = 0.0f;
+static bool g_mac_surface_dirty = true;
 
 @interface TLGameView : NSView
 @end
@@ -57,6 +58,30 @@ static float g_mac_wheel = 0.0f;
 @end
 
 @implementation TLWindowDelegate
+- (void)applicationDidBecomeActive:(NSNotification*)notification {
+    (void)notification;
+    g_mac_surface_dirty = true;
+}
+- (void)windowDidBecomeKey:(NSNotification*)notification {
+    (void)notification;
+    g_mac_surface_dirty = true;
+}
+- (void)windowDidResize:(NSNotification*)notification {
+    (void)notification;
+    g_mac_surface_dirty = true;
+}
+- (void)windowDidChangeScreen:(NSNotification*)notification {
+    (void)notification;
+    g_mac_surface_dirty = true;
+}
+- (void)windowDidChangeBackingProperties:(NSNotification*)notification {
+    (void)notification;
+    g_mac_surface_dirty = true;
+}
+- (void)windowDidDeminiaturize:(NSNotification*)notification {
+    (void)notification;
+    g_mac_surface_dirty = true;
+}
 - (BOOL)windowShouldClose:(id)sender {
     (void)sender;
     app_should_keep_running = false;
@@ -72,6 +97,7 @@ namespace {
 NSWindow* game_window = nil;
 
 void prepare_game_window(std::map<std::string, std::string>& params) {
+    g_mac_surface_dirty = true;
     // A headless run's window is never seen: no Dock icon, never shown, never brought forward.
     const auto hidden = params.find("hidden");
     const bool headless = hidden != params.end() && hidden->second == "true";
@@ -92,7 +118,14 @@ void prepare_game_window(std::map<std::string, std::string>& params) {
                                                   defer:NO];
     [game_window setTitle:@"Torchlight Rekindled"];
     [game_window center];
+    if (game_window_delegate != nil) {
+        [[NSNotificationCenter defaultCenter] removeObserver:game_window_delegate];
+    }
     game_window_delegate = [[TLWindowDelegate alloc] init];
+    [[NSNotificationCenter defaultCenter] addObserver:game_window_delegate
+                                             selector:@selector(applicationDidBecomeActive:)
+                                                 name:NSApplicationDidBecomeActiveNotification
+                                               object:NSApp];
     [game_window setDelegate:game_window_delegate];
     NSView* content = [[TLGameView alloc] initWithFrame:frame];
     [game_window setContentView:content];
@@ -240,6 +273,25 @@ void pump_events() {
         }
     }
 }
+
+// Cocoa may change the thread's current context while dispatching app/window events.
+// OGRE caches its current context, so restore the actual one before ANY frame's GL work,
+// including offscreen passes. Our external NSView has none of OgreGLView's lifecycle hooks.
+// macOS still uses OGRE's OpenGL renderer; these APIs have no Cocoa replacement.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+extern "C" void tl_macos_prepare_render(void* native_context) {
+    NSOpenGLContext* context = (NSOpenGLContext*)native_context;
+    if (context == nil || game_window == nil) return;
+    [context makeCurrentContext];
+    if (g_mac_surface_dirty) {
+        if (context.view != game_window.contentView) [context setView:game_window.contentView];
+        [context update];
+        g_mac_surface_dirty = false;
+    }
+}
+
+#pragma clang diagnostic pop
 
 extern "C" bool tl_macos_should_keep_running() { return app_should_keep_running; }
 

@@ -1,0 +1,75 @@
+name: macOS test app
+
+on:
+  push:
+    branches: [fix/macos-combat-menu-focus]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '12.0'
+      CMAKE_PREFIX_PATH: ${{ github.workspace }}/build-freetype/install
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install build tools
+        run: python3 -m pip install 'cmake<4' ninja pillow
+      - name: Build static FreeType
+        # Keep the app independent of Homebrew dylibs on the build machine.
+        run: |
+          curl --fail --location --retry 3 https://download.savannah.gnu.org/releases/freetype/freetype-2.14.1.tar.gz -o freetype.tar.gz
+          echo '174d9e53402e1bf9ec7277e22ec199ba3e55a6be2c0740cb18c0ee9850fc8c34  freetype.tar.gz' | shasum -a 256 -c -
+          tar -xzf freetype.tar.gz
+          cmake -S freetype-2.14.1 -B build-freetype -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_INSTALL_PREFIX="$CMAKE_PREFIX_PATH" -DBUILD_SHARED_LIBS=OFF \
+            -DFT_DISABLE_PNG=ON -DFT_DISABLE_HARFBUZZ=ON \
+            -DFT_DISABLE_BZIP2=ON -DFT_DISABLE_BROTLI=ON
+          cmake --build build-freetype --parallel 3
+          cmake --install build-freetype
+      - name: Prepare and build OGRE
+        run: |
+          python3 scripts/fetch_stb.py
+          python3 scripts/apply_patches.py
+          python3 scripts/build_ogre.py --platform macos --jobs 3
+      - name: Build the app
+        run: |
+          cmake -S . -B build-macos -G Xcode \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 -DBUILD_TESTING=OFF \
+            -DTL_OGRE_BUILD_DIR="$PWD/build-ogre-macos-xcode" \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO
+          cmake --build build-macos --config Release --target torchlight --parallel 3
+      - name: Package test app
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          python3 scripts/package_macos.py
+          app='build-macos/package/Torchlight Rekindled.app'
+          /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 1.1.1' "$app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$app/Contents/Info.plist"
+          # Fail instead of uploading an app that needs libraries from the runner's Homebrew.
+          otool -L "$app/Contents/MacOS/torchlight"
+          if otool -L "$app/Contents/MacOS/torchlight" | tail -n +2 | grep -Ev '^[[:space:]]*(/System/Library/|/usr/lib/)' ; then
+            echo 'Unexpected non-system dynamic dependency' >&2
+            exit 1
+          fi
+          codesign --force --deep --sign - "$app"
+          codesign --verify --deep --strict "$app"
+          ditto -c -k --sequesterRsrc --keepParent "$app" build-macos/package/Torchlight-Rekindled-macOS-arm64-test.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Torchlight-Rekindled-macOS-arm64-test
+          path: build-macos/package/Torchlight-Rekindled-macOS-arm64-test.zip
+          if-no-files-found: error
+          retention-days: 30

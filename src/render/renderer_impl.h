@@ -629,6 +629,7 @@ struct Renderer::Impl : tl::core::World {
     Ogre::RenderWindow* window = nullptr;
     /// Android: the EGL surface let go in the background and remade, the context kept.
     void watch_window_surface();
+    void prepare_window_surface();
     void fit_camera_to_window() const;  ///< to the window's first viewport, the world's
     /// config.txt's `fps_limit`: the rest of the frame slept out, after the present.
     void pace_frame();
@@ -1110,6 +1111,8 @@ struct Renderer::Impl : tl::core::World {
     std::array<bool, 4> hotbar_key_held{};
     /// DIVERGENCE (desktop mouse): a skill picked up off the skills tab, to be let go on a slot.
     bool skill_drag = false;
+    bool mouse_click_consumed = false;
+    bool mouse_alt_consumed = false;
     bool hotbar_had_pad = false;
 
     /// Whether the next main menu offers `ContinueLast`.
@@ -1326,6 +1329,7 @@ struct Renderer::Impl : tl::core::World {
         Impl* owner = nullptr;
         unsigned long long queued_us = 0;
         bool frameStarted(const Ogre::FrameEvent&) override {
+            if (owner != nullptr) owner->prepare_window_surface();
             tl::core::set_loading_boost(false);
             if (owner != nullptr) owner->step_stats_overlay();
             if (owner != nullptr) owner->touch_overlay.step();

@@ -825,6 +825,24 @@ void Renderer::Impl::drive_player(float delta) {
 
     // When menu is open, handle navigation and consume controls
     if (inventory_menu.visible()) {
+        inventory_pointer.step(in);
+        mouse_click_held = in.pointer && in.click;
+        // Dismiss the whole interaction, even while a pet/item modal or drag is open.
+        // Do this before release handling so a simultaneous drag release cannot swallow it.
+        if ((inventory_pointer.pressed || inventory_pointer.alt_pressed) &&
+            inventory_menu.pointer_hit(in).kind == InventoryMenu::PointerHit::Kind::None &&
+            !inventory_menu.pointer_on_menu(in)) {
+            close_master_menu();
+            mouse_goal = MouseGoal{};
+            player.stop_following();
+            mouse_click_consumed = in.click;
+            mouse_alt_consumed = in.click_alt;
+            confirm_held = in.confirm;
+            skip_held = in.skip;
+            tl::core::InputState zero_in;
+            step_player(delta, zero_in);
+            return;
+        }
         update_character_preview(delta);
 
         // Start on the bag's tab opens the pet commands dialog, which then
@@ -892,8 +910,6 @@ void Renderer::Impl::drive_player(float delta) {
         // onto another tray, or the right button at a merchant's, is X (to the pet, the stash, the
         // merchant and back); a tab clicked
         // opens it; the ring's two trigger arrows step the pages; a quest row is selected.
-        inventory_pointer.step(in);
-        mouse_click_held = in.pointer && in.click;
         inventory_click_age += delta;
         bool mouse_a = false;
         bool mouse_x = false;
@@ -911,15 +927,6 @@ void Renderer::Impl::drive_player(float delta) {
                     mouse_x = true;
                 }
                 inventory_drag = Hit{};
-            } else if (inventory_pointer.alt_pressed && hit.kind == Hit::Kind::None &&
-                       !inventory_menu.pointer_on_menu(in)) {
-                // The right button off the menu's windows closes it, as B does.
-                close_master_menu();
-                confirm_held = in.confirm;
-                skip_held = in.skip;
-                tl::core::InputState zero_in;
-                step_player(delta, zero_in);
-                return;
             } else if (skills_tab && !inventory_pointer.released &&
                        inventory_menu.point_skill(in)) {
                 // A skill clicked takes the cursor; the right button on it spends a point there,

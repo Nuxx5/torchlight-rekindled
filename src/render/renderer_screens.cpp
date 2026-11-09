@@ -580,6 +580,8 @@ void Renderer::Impl::close_master_menu() {
                        tl::core::housing_plays_close_sound(
                            static_cast<tl::core::HousingTab>(inventory_menu.menu_mode()));
     inventory_menu.hide();
+    inventory_drag = InventoryMenu::PointerHit{};
+    skill_drag = false;
     if (sound) play_ui(tl::core::InterfaceSound::MenuClose);
     sync_stats_page();
 }

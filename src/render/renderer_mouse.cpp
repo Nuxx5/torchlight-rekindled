@@ -68,6 +68,11 @@ void Renderer::Impl::steer_by_mouse(tl::core::InputState& in, float delta) {
         return;
     }
 
+    // A click used to dismiss a menu belongs to that menu until released.
+    mouse_click_consumed = mouse_click_consumed && in.click;
+    mouse_alt_consumed = mouse_alt_consumed && in.click_alt;
+    if (mouse_click_consumed || mouse_alt_consumed) return;
+
     const tl::core::Vec3 me = player.position();
     const Ogre::Vector3 here(me.x, me.y, me.z);
     // The stick pushed all the way towards a point, in the camera's frame: stick_destination's
@@ -110,18 +115,16 @@ void Renderer::Impl::steer_by_mouse(tl::core::InputState& in, float delta) {
         // A unit under the pointer: the nearest whose bounds the ray passes through.
         Ogre::Entity* unit = nullptr;
         bool hostile = false;
-        bool pet_clicked = false;
         float nearest = std::numeric_limits<float>::max();
         const auto consider = [&](Ogre::Entity* entity, const std::string& name, int64_t node) {
             if (entity == nullptr || !entity->isVisible() || name.empty()) return;
-            const bool own_pet = node_is_player_pet(node);
-            if (!own_pet && !node_targetable(node, entity->getParentSceneNode())) return;
+            // The pet must not intercept combat clicks, including enemies behind it.
+            if (node_is_player_pet(node) ||
+                !node_targetable(node, entity->getParentSceneNode())) return;
             const std::pair<bool, Ogre::Real> hit = ray.intersects(entity->getWorldBoundingBox(true));
             if (!hit.first || !(hit.second < nearest)) return;
             nearest = hit.second;
-            pet_clicked = own_pet;
-            unit = own_pet ? nullptr : entity;
-            if (own_pet) return;
+            unit = entity;
             const tl::core::UnitStats* stats = unit_book.find(name);
             hostile = stats != nullptr && unit_hostile(node, *stats);
         };
@@ -130,23 +133,6 @@ void Renderer::Impl::steer_by_mouse(tl::core::InputState& in, float delta) {
         }
         for (const auto& owner : spawned) {
             for (const SpawnedUnit& made : owner.second) consider(made.entity, made.unit, made.id);
-        }
-        if (pet_clicked) {
-            // The PC's click on the pet: its bag beside the hero's, the menu opened as I opens
-            // it with the focus on the pet's tray.
-            if (!inventory_menu.visible()) {
-                inventory_menu.toggle();
-                play_ui(tl::core::InterfaceSound::MenuOpen);
-            }
-            inventory_menu.set_menu_mode(MenuMode::Inventory);
-            update_menu();
-            if (inventory_menu.pet_tray_available() && !inventory_menu.pet_tray_focused()) {
-                inventory_menu.swap_bag_focus(0);
-                update_menu();
-            }
-            update_character_preview(0.0f);
-            TL_LOG_INFO("mouse: the pet's bag");
-            return;
         }
         if (unit != nullptr && unit->getParentSceneNode() != nullptr) {
             mouse_goal.kind = hostile ? MouseGoal::Kind::Attack : MouseGoal::Kind::Interact;
